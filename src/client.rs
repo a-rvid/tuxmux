@@ -5,7 +5,8 @@
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
-use ratatui::layout::{Rect, Constraint, Layout, Position};
+use ansi_to_tui::IntoText as _;
+use ratatui::layout::{Rect, Alignment, Constraint, Layout, Position};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, Paragraph};
@@ -17,7 +18,7 @@ fn main() -> Result<()> {
     // let stream = UnixStream::connect("/tmp/tuxmux.sock").await?;
     // let (mut r, mut w) = stream.into_split();
 
-    // // stdin -> socket
+    // stdin -> socket
     // tokio::spawn(async move {
     //     let mut stdin = io::stdin();
     //     let mut buf = [0u8; 1024];
@@ -53,6 +54,7 @@ struct App {
     messages: Vec<String>,
     /// Show help message
     show_help: bool,
+    show_welcome: bool,
 }
 
 enum InputMode {
@@ -85,6 +87,7 @@ impl App {
             messages: Vec::new(),
             character_index: 0,
             show_help: false,
+            show_welcome: true,
         }
     }
 
@@ -168,14 +171,21 @@ impl App {
                     InputMode::Normal => match key.code {
                         KeyCode::Char(':') => {
                             self.input_mode = InputMode::Command;
+                            self.show_help = false;
+                            self.show_welcome = false;
                         }
-                        KeyCode::Char('q') => {
-                            return Ok(());
-                        }
+                        // KeyCode::Char('q') => {
+                        //     return Ok(());
+                        // }
                         KeyCode::Char('i') => {
                             self.input_mode = InputMode::Insert;
+                            self.show_help = false;
+                            self.show_welcome = false;
                         }
-                        _ => {}
+                        _ => {
+                            self.show_help = false;
+                            self.show_welcome = false;
+                        }
                     },
                     InputMode::Command if key.kind == KeyEventKind::Press => match key.code {
                         KeyCode::Enter => match self.cmd() {
@@ -232,7 +242,7 @@ impl App {
                 ListItem::new(content)
             })
             .collect();
-        let messages = List::new(messages).block(Block::bordered().title("Messages"));
+        let messages = List::new(messages).block(Block::bordered().title("Client"));
         frame.render_widget(messages, messages_area);
 
         let (msg, style) = match self.input_mode {
@@ -278,12 +288,26 @@ impl App {
             let area = centered_rect(60, 40, frame.area());
 
             let help = Paragraph::new(
-                "Welcome to TuxMux\nTuxMux is a simple terminal multiplexer for shells.\nTuxMux tries to emulate vim bindings.\n\n:h | :help - Show this help message\n:q | :quit - Quit TuxMux (or close overlay)\ni - Insert mode\n\nPress Esc to switch to normal mode.\n",
+                ":h | :help - Show this help message\n:q | :quit - Quit TuxMux (or close overlay)\ni - Insert mode\n\nPress Esc to switch to normal mode.\n",
             )
             .block(Block::bordered().title("Help"))
             .style(Style::default().bg(Color::Black));
 
             frame.render_widget(help, area);
+        }
+        
+        const ENTER: &str = "\x1b[90m<ENTER>\x1b[0m";
+        if self.show_welcome {
+            let area = centered_rect(60, 40, frame.area());
+            let line = format!("Welcome to TuxMux!\n
+https://github.com/a-rvid/tuxmux/\n
+\n
+type  :h | :help{ENTER}    if you are new      
+type  :q | :quit{ENTER}    to exit             
+type  i{ENTER}             to enter insert mode
+type  Escape{ENTER}        to enter normal mode").into_text().unwrap();
+            let welcome = Paragraph::new(line).alignment(Alignment::Center);
+            frame.render_widget(welcome, area);
         }
     }
 }
