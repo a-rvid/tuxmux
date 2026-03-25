@@ -4,15 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-portable-pty = "0.9.0"
+ansi-to-tui = "8.0.1"
+clap = { version = "4.6.0", features = ["derive", "std"], default-features = false }
+color-eyre = "0.6.5"
+crossterm = "0.29.0"
+ctrlc = "3.5.2"
+ratatui = "0.30.0"
+tokio = { version = "1.50.0", features = ["full"] }
 
 [[bin]]
 name = "server"
-path = "src/server/server.rs"
+path = "src/server.rs"
 
 [[bin]]
 name = "client"
-path = "src/client/client.rs"
+path = "src/client.rs"
 
 [profile.release]
 lto = true

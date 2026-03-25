@@ -312,11 +312,11 @@ impl App {
             let line = format!("Welcome to TuxMux!\n
 https://github.com/a-rvid/tuxmux/\n
 \n
-type  :h | :help{ENTER}      if you are new        
-type  :q | :quit{ENTER}      to exit               
+type  :h | :help{ENTER}      if you are new      
+type  :q | :quit{ENTER}      to exit             
 type  :a | :all{ENTER}       to send to all clients
-type  i{ENTER}               to enter insert mode  
-type  Escape{ENTER}          to enter normal mode  
+type  i{ENTER}               to enter insert mode
+type  Escape{ENTER}          to enter normal mode
 ").into_text().unwrap();
             let welcome = Paragraph::new(line).alignment(Alignment::Center);
             frame.render_widget(welcome, area);

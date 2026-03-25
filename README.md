@@ -1,1 +1,1 @@
-A lightweight, fast, and simple terminal multiplexer for new linux users.
+Terminal multiplexer for shells.
