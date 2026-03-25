@@ -181,7 +181,7 @@ impl App {
                         KeyCode::Enter => match self.cmd() {
                             Command::Quit => if self.show_help { self.show_help = false; } else { return Ok(()); },
                             Command::Help => { self.show_help = true; self.input_mode = InputMode::Normal; },
-                            _cmd => self.input_mode = InputMode::Normal,
+                            cmd => self.input_mode = InputMode::Normal,
                         },
                         KeyCode::Char(to_insert) => self.enter_char(to_insert),
                         KeyCode::Backspace => self.delete_char(),
@@ -203,45 +203,8 @@ impl App {
             Constraint::Length(1),
             Constraint::Length(1),
         ]);
-        let (msg, style) = match self.input_mode {
-            InputMode::Normal => (
-                vec![
-                    "Normal".bold().bg(Color::Green),
-                ],
-                Style::default().add_modifier(Modifier::RAPID_BLINK),
-            ),
-            InputMode::Command => (
-                vec![
-                    "Command".bold().bg(Color::Yellow),
-                ],
-                Style::default(),
-            ),
-            InputMode::Insert => (
-                vec![
-                    "Insert".bold().bg(Color::Blue),
-                ],
-                Style::default(),
-            ),
-        };
         let [messages_area, help_area, input_area] = frame.area().layout(&layout);
 
-        let text = Text::from(Line::from(msg)).patch_style(style);
-        let help_message = Paragraph::new(text);
-        frame.render_widget(help_message, help_area);
-
-        let content = match self.input_mode {
-            InputMode::Command => format!(":{}", self.input),
-                _ => self.input.clone(),
-            };
-
-        let input = Paragraph::new(content)
-            .style(match self.input_mode {
-                InputMode::Normal => Style::default(),
-                InputMode::Command => Style::default().add_modifier(Modifier::RAPID_BLINK),
-                InputMode::Insert => Style::default().fg(Color::Yellow),
-            });
-
-        frame.render_widget(input, input_area);
         match self.input_mode {
             // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
             InputMode::Normal => {}
@@ -271,5 +234,44 @@ impl App {
             .collect();
         let messages = List::new(messages).block(Block::bordered().title("Messages"));
         frame.render_widget(messages, messages_area);
+
+        let (msg, style) = match self.input_mode {
+            InputMode::Normal => (
+                vec![
+                    "Normal".bold().bg(Color::Green),
+                ],
+                Style::default().add_modifier(Modifier::RAPID_BLINK),
+            ),
+            InputMode::Command => (
+                vec![
+                    "Command".bold().bg(Color::Yellow),
+                ],
+                Style::default(),
+            ),
+            InputMode::Insert => (
+                vec![
+                    "Insert".bold().bg(Color::Blue),
+                ],
+                Style::default(),
+            ),
+        };
+
+        let text = Text::from(Line::from(msg)).patch_style(style);
+        let help_message = Paragraph::new(text);
+        frame.render_widget(help_message, help_area);
+
+        let content = match self.input_mode {
+            InputMode::Command => format!(":{}", self.input),
+                _ => self.input.clone(),
+            };
+
+        let input = Paragraph::new(content)
+            .style(match self.input_mode {
+                InputMode::Normal => Style::default(),
+                InputMode::Command => Style::default().add_modifier(Modifier::RAPID_BLINK),
+                InputMode::Insert => Style::default().fg(Color::Yellow),
+            });
+
+        frame.render_widget(input, input_area);
     }
 }
