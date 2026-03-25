@@ -1,7 +1,9 @@
-// use tokio::net::UnixStream;
-// use std::io::Write;
-// use tokio::io::{AsyncReadExt, AsyncWriteExt};
-// use std::io::{self, Read};
+use tokio::net::UnixStream;
+use tokio::io::Write;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{self, Read};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
@@ -12,34 +14,27 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, List, ListItem, Paragraph};
 use ratatui::{DefaultTerminal, Frame};
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
+    let stream = UnixStream::connect("/tmp/tuxmux.sock").await?;
+    let (mut r, mut w) = stream.into_split();
+
+    // w.write_all to execute
+    // socket -> stdout
+    // let tx = Arc::new(Mutex::new(w));
+
+    let mut stdout = io::stdout();
+    let mut buf = [0u8; 1024];
+    tokio::spawn(async move {
+        loop {
+            let n = r.read(&mut buf).await.unwrap();
+            if n == 0 { break; }
+            let s = String::from_utf8_lossy(&buf[..n]);
+        }
+    });
+
     color_eyre::install()?;
     ratatui::run(|terminal| App::new().run(terminal))
-    // let stream = UnixStream::connect("/tmp/tuxmux.sock").await?;
-    // let (mut r, mut w) = stream.into_split();
-
-    // stdin -> socket
-    // tokio::spawn(async move {
-    //     let mut stdin = io::stdin();
-    //     let mut buf = [0u8; 1024];
-    //     loop {
-    //         let n = stdin.read(&mut buf).unwrap();
-    //         if n == 0 { break; }
-    //         let _ = w.write_all(&buf[..n]).await;
-    //     }
-    // });
-
-    // // socket -> stdout
-    // let mut stdout = io::stdout();
-    // let mut buf = [0u8; 1024];
-    // loop {
-    //     let n = r.read(&mut buf).await?;
-    //     if n == 0 { break; }
-    //     stdout.write_all(&buf[..n])?;
-    //     stdout.flush()?;
-    // }
-
-    // Ok(())
 }
 
 /// App holds the state of the application
@@ -66,15 +61,26 @@ enum InputMode {
 enum Command {
     Quit,
     Help,
+    All(String),
     Unknown(String),
 }
 
 impl Command {
     fn parse(input: &str) -> Self {
-        match input.trim() {
-            "q" | "quit" => Self::Quit,
-            "h" | "help" => Self::Help,
-            _ => Self::Unknown(input.to_string()),
+        match input.split_once(' ') {
+            // first and rest here are &str from split_once
+            Some((first, rest)) => match first {
+                "q" | "quit" => Self::Quit,
+                "h" | "help" => Self::Help,
+                "a" | "all" => Self::All(rest.to_string()),
+                _ => Self::Unknown(input.to_string()),
+            },
+            // no space => command only
+            None => match input {
+                "q" | "quit" => Self::Quit,
+                "h" | "help" => Self::Help,
+                _ => Self::Unknown(input.to_string()),
+            },
         }
     }
 }
@@ -191,6 +197,11 @@ impl App {
                         KeyCode::Enter => match self.cmd() {
                             Command::Quit => if self.show_help { self.show_help = false; } else { return Ok(()); },
                             Command::Help => { self.show_help = true; self.input_mode = InputMode::Normal; },
+                            Command::All(arg) => {
+                                // tx.write_all(arg.as_bytes()).await.unwrap();
+                                self.show_help = false;
+                                self.input_mode = InputMode::Normal; 
+                            },
                             _cmd => self.input_mode = InputMode::Normal,
                         },
                         KeyCode::Char(to_insert) => self.enter_char(to_insert),
@@ -302,10 +313,12 @@ impl App {
             let line = format!("Welcome to TuxMux!\n
 https://github.com/a-rvid/tuxmux/\n
 \n
-type  :h | :help{ENTER}    if you are new      
-type  :q | :quit{ENTER}    to exit             
-type  i{ENTER}             to enter insert mode
-type  Escape{ENTER}        to enter normal mode").into_text().unwrap();
+type  :h | :help{ENTER}      if you are new      
+type  :q | :quit{ENTER}      to exit             
+type  :a | :all{ENTER}       to send to all clients
+type  i{ENTER}               to enter insert mode
+type  Escape{ENTER}          to enter normal mode
+").into_text().unwrap();
             let welcome = Paragraph::new(line).alignment(Alignment::Center);
             frame.render_widget(welcome, area);
         }
