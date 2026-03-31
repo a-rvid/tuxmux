@@ -12,12 +12,6 @@ ctrlc = "3.5.2"
 ratatui = "0.30.0"
 tokio = { version = "1.50.0", features = ["full"] }
 
-[build]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
-
-[profile.dev]
-debug = false
-
 [[bin]]
 name = "server"
 path = "src/server.rs"
