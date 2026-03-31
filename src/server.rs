@@ -20,6 +20,11 @@ struct Args {
 type TcpWriters = Arc<Mutex<Vec<tokio::net::tcp::OwnedWriteHalf>>>;
 type UnixWriters = Arc<Mutex<Vec<tokio::net::unix::OwnedWriteHalf>>>;
 
+/// Here we signal to the client which type of message it is.
+const STDOUT: u8 = 0x01;
+const POPUP: u8 = 0x02;
+const MOTD: u8 = 0x03;
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let args = Args::parse();
@@ -84,7 +89,8 @@ async fn main() -> std::io::Result<()> {
             match unix_listener.accept().await {
                 Ok((stream, _)) => {
                     println!("Operator connected");
-                    let (mut reader, writer) = stream.into_split();
+                    let (mut reader, mut writer) = stream.into_split();
+                    let _ = writer.write_all(format!("{POPUP}Operator connected\n").as_bytes()).await;
                     unix_writers_clone.lock().await.push(writer);
 
                     let tcp_writers = tcp_writers_clone.clone();

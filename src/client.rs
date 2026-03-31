@@ -1,8 +1,8 @@
 use tokio::net::UnixStream;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use std::io::{self, Read, Write};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::mpsc;
+use std::time::Duration;
+use std::env::args;
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
@@ -15,25 +15,41 @@ use ratatui::{DefaultTerminal, Frame};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // let stream = UnixStream::connect("/tmp/tuxmux.sock").await?;
-    // let (mut r, mut w) = stream.into_split();
+    let socket = args().nth(1).unwrap_or("/tmp/tuxmux.sock".to_string());
+    let stream = UnixStream::connect(socket).await?;
 
-    // w.write_all to execute
-    // socket -> stdout
-    // let tx = Arc::new(Mutex::new(w));
+    let (mut r, mut w) = stream.into_split();
 
-    // let mut stdout = io::stdout();
-    // let mut buf = [0u8; 1024];
-    // tokio::spawn(async move {
-    //     loop {
-    //         let n = r.read(&mut buf).await.unwrap();
-    //         if n == 0 { break; }
-    //         let s = String::from_utf8_lossy(&buf[..n]);
-    //     }
-    // });
+    let (tx_in, rx_in) = mpsc::channel::<String>(100);
+    let (tx_out, mut rx_out) = mpsc::channel::<String>(100);
+
+    tokio::spawn(async move {
+        let mut buf = [0u8; 4096];
+        loop {
+            match r.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
+                    if tx_in.send(s).await.is_err() {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    tokio::spawn(async move {
+        while let Some(msg) = rx_out.recv().await {
+            if w.write_all(msg.as_bytes()).await.is_err() {
+                break;
+            }
+        }
+    });
 
     color_eyre::install()?;
-    ratatui::run(|terminal| App::new().run(terminal))
+    ratatui::run(|terminal| App::new().run(terminal, 1, rx_in, tx_out)).unwrap();
+    Ok(())
 }
 
 /// App holds the state of the application
@@ -154,12 +170,6 @@ impl App {
         self.character_index = 0;
     }
 
-    // fn submit_message(&mut self) {
-    //     self.messages.push(self.input.clone());
-    //     self.input.clear();
-    //     self.reset_cursor();
-    // }
-
     fn cmd(&mut self) -> Command {
         let cmd = Command::parse(&self.input);
         self.input.clear();
@@ -167,57 +177,74 @@ impl App {
         return cmd
     }
 
-    fn run(mut self, terminal: &mut DefaultTerminal, shell: usize) -> Result<()> {
+    fn run(&mut self, terminal: &mut DefaultTerminal, shell: usize, mut rx: mpsc::Receiver<String>, tx: mpsc::Sender<String>) -> Result<()> {
         loop {
-            terminal.draw(|frame| self.render(frame))?;
+            terminal.draw(|frame| self.render(frame, shell))?;
 
-            if let Some(key) = event::read()?.as_key_press_event() {
-                match self.input_mode {
-                    InputMode::Normal => match key.code {
-                        KeyCode::Char(':') => {
-                            self.input_mode = InputMode::Command;
-                            self.show_help = false;
-                            self.show_welcome = false;
-                        }
-                        // KeyCode::Char('q') => {
-                        //     return Ok(());
-                        // }
-                        KeyCode::Char('i') => {
-                            self.input_mode = InputMode::Insert;
-                            self.show_help = false;
-                            self.show_welcome = false;
-                        }
-                        _ => {
-                            self.show_help = false;
-                            self.show_welcome = false;
-                        }
-                    },
-                    InputMode::Command if key.kind == KeyEventKind::Press => match key.code {
-                        KeyCode::Enter => match self.cmd() {
-                            Command::Quit => if self.show_help { self.show_help = false; } else { return Ok(()); },
-                            Command::Help => { self.show_help = true; self.input_mode = InputMode::Normal; },
-                            Command::All(arg) => {
-                                // tx.write_all(arg.as_bytes()).await.unwrap();
+            while let Ok(msg) = rx.try_recv() {
+                self.messages.push(msg);
+            }
+
+            if event::poll(Duration::from_millis(10))? {
+                if let Some(key) = event::read()?.as_key_press_event() {
+                    match self.input_mode {
+                        InputMode::Normal => match key.code {
+                            KeyCode::Char(':') => {
+                                self.input_mode = InputMode::Command;
                                 self.show_help = false;
-                                self.input_mode = InputMode::Normal; 
-                            },
-                            _cmd => self.input_mode = InputMode::Normal,
+                                self.show_welcome = false;
+                            }
+                            KeyCode::Char('i') => {
+                                self.input_mode = InputMode::Insert;
+                                self.show_help = false;
+                                self.show_welcome = false;
+                            }
+                            _ => {
+                                self.show_help = false;
+                                self.show_welcome = false;
+                            }
                         },
-                        KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                        KeyCode::Backspace => self.delete_char(),
-                        KeyCode::Left => self.move_cursor_left(),
-                        KeyCode::Right => self.move_cursor_right(),
-                        KeyCode::Esc => self.input_mode = InputMode::Normal,
+                        InputMode::Command if key.kind == KeyEventKind::Press => match key.code {
+                            KeyCode::Enter => match self.cmd() {
+                                Command::Quit => if self.show_help { self.show_help = false; } else { return Ok(()); },
+                                Command::Help => { self.show_help = true; self.input_mode = InputMode::Normal; },
+                                Command::All(arg) => {
+                                    let _ = tx.blocking_send(format!("{}\n", arg));
+                                    self.show_help = false;
+                                    self.input_mode = InputMode::Normal; 
+                                },
+                                Command::Unknown(_input) => {
+                                    self.input_mode = InputMode::Normal;
+                                }
+                            },
+                            KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                            KeyCode::Backspace => self.delete_char(),
+                            KeyCode::Left => self.move_cursor_left(),
+                            KeyCode::Right => self.move_cursor_right(),
+                            KeyCode::Esc => self.input_mode = InputMode::Normal,
+                            _ => {}
+                        },
+                        InputMode::Insert if key.kind == KeyEventKind::Press => match key.code {
+                            KeyCode::Enter => {
+                                let _ = tx.blocking_send(format!("{}\n", self.input));
+                                self.input.clear();
+                                self.reset_cursor();
+                            }
+                            KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                            KeyCode::Backspace => self.delete_char(),
+                            KeyCode::Left => self.move_cursor_left(),
+                            KeyCode::Right => self.move_cursor_right(),
+                            KeyCode::Esc => self.input_mode = InputMode::Normal,
+                            _ => {}
+                        }
                         _ => {}
-                    },
-                    InputMode::Command => {}
-                    InputMode::Insert => {}
+                    }
                 }
             }
         }
     }
 
-    fn render(&self, frame: &mut Frame) {
+    fn render(&self, frame: &mut Frame, shell: usize) {
         let layout = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(1),
@@ -226,20 +253,12 @@ impl App {
         let [messages_area, help_area, input_area] = frame.area().layout(&layout);
 
         match self.input_mode {
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
             InputMode::Normal => {}
-
-            // Make the cursor visible and ask ratatui to put it at the specified coordinates after
-            // rendering
             #[expect(clippy::cast_possible_truncation)]
             InputMode::Command => frame.set_cursor_position(Position::new(
-                // Draw the cursor at the current position in the input field.
-                // This position can be controlled via the left and right arrow key
                 input_area.x + self.character_index as u16 + 1,
-                // Move one line down, from the border to the input line
                 input_area.y + 1,
             )),
-
             InputMode::Insert => {} 
         }
 
@@ -312,11 +331,11 @@ impl App {
             let line = format!("Welcome to TuxMux!\n
 https://github.com/a-rvid/tuxmux/\n
 \n
-type  :h | :help{ENTER}      if you are new      
-type  :q | :quit{ENTER}      to exit             
+type  :h | :help{ENTER}      if you are new        
+type  :q | :quit{ENTER}      to exit               
 type  :a | :all{ENTER}       to send to all clients
-type  i{ENTER}               to enter insert mode
-type  Escape{ENTER}          to enter normal mode
+type  i{ENTER}               to enter insert mode  
+type  Escape{ENTER}          to enter normal mode  
 ").into_text().unwrap();
             let welcome = Paragraph::new(line).alignment(Alignment::Center);
             frame.render_widget(welcome, area);
