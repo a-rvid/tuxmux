@@ -1,11 +1,14 @@
 use tokio::net::UnixStream;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::time::Instant;
 use tokio::sync::mpsc;
 use std::time::Duration;
 use std::env::args;
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEventKind};
+
+const CMD_NOTIFY: u8 = 0x01;
 use ansi_to_tui::IntoText as _;
 use ratatui::layout::{Rect, Alignment, Constraint, Layout, Position};
 use ratatui::style::{Color, Modifier, Style, Stylize};
@@ -18,7 +21,7 @@ async fn main() -> Result<()> {
     let socket = args().nth(1).unwrap_or("/tmp/tuxmux.sock".to_string());
     let stream = UnixStream::connect(socket).await?;
 
-    let (mut r, mut w) = stream.into_split();
+    let (r, mut w) = stream.into_split();
 
     let (tx_in, rx_in) = mpsc::channel::<String>(100);
     let (tx_out, mut rx_out) = mpsc::channel::<String>(100);
@@ -66,6 +69,13 @@ struct App {
     /// Show help message
     show_help: bool,
     show_welcome: bool,
+    notifications: Vec<Notification>,
+    welcome_content: Option<String>,
+}
+
+struct Notification {
+    message: String,
+    time: Instant,
 }
 
 enum InputMode {
@@ -74,10 +84,30 @@ enum InputMode {
     Insert,
 }
 
+enum ServerMsg {
+    /// Prefixed with '1' — the server MOTD, sent once on connect
+    Motd(String),
+    /// Prefixed with '2' — transient notification
+    Notification(String),
+    /// No prefix — regular shell output
+    Output(String),
+}
+
+impl ServerMsg {
+    fn parse(line: String) -> Self {
+        match line.chars().next() {
+            Some('1') => Self::Motd(line[1..].trim_end_matches('\n').replace("\\n", "\n")),
+            Some('2') => Self::Notification(line[1..].trim_end_matches('\n').to_string()),
+            _ => Self::Output(line.trim_end_matches('\n').to_string()),
+        }
+    }
+}
+
 enum Command {
     Quit,
     Help,
     All(String),
+    Notify(String),
     Unknown(String),
 }
 
@@ -89,12 +119,14 @@ impl Command {
                 "q" | "quit" => Self::Quit,
                 "h" | "help" => Self::Help,
                 "a" | "all" => Self::All(rest.to_string()),
+                "n" | "notify" => Self::Notify(rest.to_string()),
                 _ => Self::Unknown(input.to_string()),
             },
             // no space => command only
             None => match input {
                 "q" | "quit" => Self::Quit,
                 "h" | "help" => Self::Help,
+                "n" | "notify" => Self::Notify(String::new()),
                 _ => Self::Unknown(input.to_string()),
             },
         }
@@ -110,6 +142,8 @@ impl App {
             character_index: 0,
             show_help: false,
             show_welcome: true,
+            notifications: Vec::new(),
+            welcome_content: None,
         }
     }
 
@@ -129,10 +163,6 @@ impl App {
         self.move_cursor_right();
     }
 
-    /// Returns the byte index based on the character position.
-    ///
-    /// Since each character in a string can contain multiple bytes, it's necessary to calculate
-    /// the byte index based on the index of the character.
     fn byte_index(&self) -> usize {
         self.input
             .char_indices()
@@ -156,8 +186,6 @@ impl App {
             // Getting all characters after selected character.
             let after_char_to_delete = self.input.chars().skip(current_index);
 
-            // Put all characters together except the selected one.
-            // By leaving the selected one out, it is forgotten and therefore deleted.
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
@@ -175,15 +203,31 @@ impl App {
         let cmd = Command::parse(&self.input);
         self.input.clear();
         self.reset_cursor();
-        return cmd
+        cmd
     }
 
     fn run(&mut self, terminal: &mut DefaultTerminal, shell: usize, mut rx: mpsc::Receiver<String>, tx: mpsc::Sender<String>) -> Result<()> {
         loop {
             terminal.draw(|frame| self.render(frame, shell))?;
 
-            while let Ok(msg) = rx.try_recv() {
-                self.messages.push(msg);
+            // Remove notifications that have been displayed for more than 5 seconds
+            self.notifications.retain(|n| n.time.elapsed() < Duration::from_secs(5));
+
+            while let Ok(line) = rx.try_recv() {
+                match ServerMsg::parse(line) {
+                    ServerMsg::Motd(content) => {
+                        self.welcome_content = Some(content);
+                    }
+                    ServerMsg::Notification(msg) => {
+                        self.notifications.push(Notification {
+                            message: msg,
+                            time: Instant::now(),
+                        });
+                    }
+                    ServerMsg::Output(msg) => {
+                        self.messages.push(msg);
+                    }
+                }
             }
 
             if event::poll(Duration::from_millis(10))? {
@@ -212,7 +256,16 @@ impl App {
                                 Command::All(arg) => {
                                     let _ = tx.blocking_send(format!("{}\n", arg));
                                     self.show_help = false;
-                                    self.input_mode = InputMode::Normal; 
+                                    self.input_mode = InputMode::Normal;
+                                },
+                                Command::Notify(msg) => {
+                                    let tx_clone = tx.clone();
+                                    let msg_to_send = format!("{}{}\n", CMD_NOTIFY as char, msg);
+                                    tokio::spawn(async move {
+                                        let _ = tx_clone.send(msg_to_send).await;
+                                    });
+                                    self.show_help = false;
+                                    self.input_mode = InputMode::Normal;
                                 },
                                 Command::Unknown(_input) => {
                                     self.input_mode = InputMode::Normal;
@@ -249,7 +302,7 @@ impl App {
         let layout = Layout::vertical([
             Constraint::Min(1),
             Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(1)
         ]);
         let [messages_area, help_area, input_area] = frame.area().layout(&layout);
 
@@ -262,7 +315,6 @@ impl App {
             )),
             InputMode::Insert => {} 
         }
-                
         let messages: Vec<ListItem> = self
             .messages
             .iter()
@@ -327,11 +379,42 @@ impl App {
 
             frame.render_widget(help, area);
         }
-        
-        const ENTER: &str = "\x1b[90m<ENTER>\x1b[0m";
+
+        if !self.notifications.is_empty() {
+            let width = 30;
+            let height = (self.notifications.len() as u16).saturating_add(2);
+            let area = top_right_rect(width, height, frame.area());
+
+            let notifications: Vec<ListItem> = self
+                .notifications
+                .iter()
+                .map(|notification| {
+                    let content = Line::from(vec![
+                        " ! ".bold().yellow(),
+                        notification.message.clone().into(),
+                    ]);
+                    ListItem::new(content)
+                })
+                .collect();
+            let notifications = List::new(notifications)
+                .block(
+                    Block::bordered()
+                        .title(" Notifications ")
+                        .title_alignment(Alignment::Center)
+                        .border_style(Style::default().fg(Color::Yellow)),
+                )
+                .style(Style::default().bg(Color::Black));
+            frame.render_widget(notifications, area);
+        }
+
         if self.show_welcome {
             let area = centered_rect(60, 40, frame.area());
-            let line = format!("Welcome to TuxMux!\n
+            let content = if let Some(content) = &self.welcome_content {
+                content.clone().into_text().unwrap()
+            } else {
+                const ENTER: &str = "\x1b[90m<ENTER>\x1b[0m";
+                format!(
+                    "Welcome to TuxMux!\n
 https://github.com/a-rvid/tuxmux/\n
 \n
 type  :h | :help{ENTER}      if you are new        
@@ -339,11 +422,29 @@ type  :q | :quit{ENTER}      to exit
 type  :a | :all{ENTER}       to send to all clients
 type  i{ENTER}               to enter insert mode  
 type  Escape{ENTER}          to enter normal mode  
-").into_text().unwrap();
-            let welcome = Paragraph::new(line).alignment(Alignment::Center);
+"
+                )
+                .into_text()
+                .unwrap()
+            };
+            let welcome = Paragraph::new(content).alignment(Alignment::Center);
             frame.render_widget(welcome, area);
         }
     }
+}
+
+fn top_right_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let top_row = Layout::vertical([
+        Constraint::Length(height),
+        Constraint::Min(0),
+    ])
+    .split(area)[0];
+
+    Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(width),
+    ])
+    .split(top_row)[1]
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
