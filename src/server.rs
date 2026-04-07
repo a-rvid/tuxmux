@@ -1,6 +1,9 @@
 use dns_server::DnsRecord;
 use permit::Permit;
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::EncodePrivateKey, pkcs8::EncodePublicKey, pkcs8::DecodePrivateKey, pkcs8::DecodePublicKey};
+use rsa::{
+    RsaPrivateKey, RsaPublicKey, pkcs8::DecodePrivateKey, pkcs8::DecodePublicKey,
+    pkcs8::EncodePrivateKey, pkcs8::EncodePublicKey,
+};
 use rusqlite::Connection;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
@@ -28,6 +31,17 @@ const SPLASH: &str = r"/_  __/_  ___  __/  |/  /_  ___  __
 
 #[tokio::main]
 async fn main() {
+    let top_permit = Permit::new();
+    let permit = top_permit.new_sub();
+    std::thread::spawn(move || {
+        Signals::new([SIGINT, SIGTERM])
+            .unwrap()
+            .forever()
+            .next()
+            .unwrap();
+        drop(top_permit);
+    });
+
     let data = if let Ok(config) = std::env::var("TUXMUX_CONFIG") {
         config
     } else if get_current_uid() == 0 {
@@ -47,46 +61,38 @@ async fn main() {
         fs::create_dir(data).await.unwrap();
     }
 
-    let conn = init_db(data).await.unwrap(); 
+    let conn = init_db(data).await.unwrap();
 
-    let (private_key, public_key): (RsaPrivateKey, RsaPublicKey) = if !fs::try_exists(data.join("private.der")).await.unwrap() {
-        let (private_key, public_key) = generate_keypair(2048);
-        let private_key_file = private_key.to_pkcs8_der().unwrap();
-        let public_key_file = public_key.to_public_key_der().unwrap();
+    // This is the master keypair
+    // encrypts everything that the operator can access after a challenge
+    let (private_key, public_key): (RsaPrivateKey, RsaPublicKey) =
+        if !fs::try_exists(data.join("private.der")).await.unwrap() {
+            let (private_key, public_key) = generate_keypair(2048);
+            let private_key_file = private_key.to_pkcs8_der().unwrap();
+            let public_key_file = public_key.to_public_key_der().unwrap();
 
-        fs::write(
-            data.join("private.der"),
-            private_key_file.as_bytes().as_ref(),
-        )
-        .await
-        .unwrap();
-        fs::write(data.join("public.der"), public_key_file.as_ref())
+            fs::write(
+                data.join("private.der"),
+                private_key_file.as_bytes().as_ref(),
+            )
             .await
             .unwrap();
-        fs::set_permissions(data.join("public.der"), Permissions::from_mode(0o600))
-            .await
-            .unwrap();
-        fs::set_permissions(data.join("private.der"), Permissions::from_mode(0o600))
-            .await
-            .unwrap();
-        (private_key, public_key)
-    } else {
-        let private_key = RsaPrivateKey::read_pkcs8_der_file(data.join("private.der")).unwrap();
-        let public_key = RsaPublicKey::read_public_key_der_file(data.join("public.der")).unwrap();
-        (private_key, public_key)
-    };
-
-    let top_permit = Permit::new();
-    let permit = top_permit.new_sub();
-
-    std::thread::spawn(move || {
-        Signals::new([SIGINT, SIGTERM])
-            .unwrap()
-            .forever()
-            .next()
-            .unwrap();
-        drop(top_permit);
-    });
+            fs::write(data.join("public.der"), public_key_file.as_ref())
+                .await
+                .unwrap();
+            fs::set_permissions(data.join("public.der"), Permissions::from_mode(0o600))
+                .await
+                .unwrap();
+            fs::set_permissions(data.join("private.der"), Permissions::from_mode(0o600))
+                .await
+                .unwrap();
+            (private_key, public_key)
+        } else {
+            let private_key = RsaPrivateKey::read_pkcs8_der_file(data.join("private.der")).unwrap();
+            let public_key =
+                RsaPublicKey::read_public_key_der_file(data.join("public.der")).unwrap();
+            (private_key, public_key)
+        };
 
     let records = vec![
         DnsRecord::new_txt("example.com", "Hello, world!").unwrap(),
@@ -110,7 +116,8 @@ async fn init_db(path: &Path) -> rusqlite::Result<Connection, rusqlite::Error> {
     let conn = Connection::open(path.join("tuxmux.db"))?;
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         BEGIN;
 
         CREATE TABLE IF NOT EXISTS clients (
@@ -151,6 +158,7 @@ async fn init_db(path: &Path) -> rusqlite::Result<Connection, rusqlite::Error> {
         CREATE INDEX IF NOT EXISTS idx_operators_key   ON operators(auth_key);
 
         COMMIT;
-    ")?;
+    ",
+    )?;
     Ok(conn)
 }
