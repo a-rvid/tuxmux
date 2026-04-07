@@ -4,16 +4,13 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ansi-to-tui = { version = "8", default-features = false }
-clap = { version = "4.6.0", features = ["derive", "std"], default-features = false }
-color-eyre = { version = "0.6.5", default-features = false }
-crossterm = { version = "0.29.0", default-features = false }
-ctrlc = { version = "3.5", default-features = false }
-ratatui = { version = "0.30.0", default-features = false, features = ["all-widgets", "crossterm"] }
-tokio = { version = "1.50.0", default-features=false, features = ["rt", "rt-multi-thread", "net", "io-util", "io-std", "sync", "time", "macros"] }
-
-[build]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+dns-server = "0.2.6"
+permit = "0.2.1"
+rsa = { version = "0.9", default-features = false, features = ["std"] }
+rusqlite = { version = "0.39.0", features = ["bundled"], default-features = false }
+signal-hook = { version = "0.4", default-features = false, features = ["iterator"] }
+tokio = { version = "1.50.0", default-features=false, features = ["rt", "rt-multi-thread", "fs",  "macros"] }
+users = { version = "0.11.0", default-features = false }
 
 [profile.dev]
 debug = false
@@ -22,9 +19,9 @@ debug = false
 name = "server"
 path = "src/server.rs"
 
-[[bin]]
-name = "client"
-path = "src/client.rs"
+# [[bin]]
+# name = "client"
+# path = "src/client.rs"
 
 [profile.release]
 lto = true
