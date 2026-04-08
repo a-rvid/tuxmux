@@ -6,6 +6,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+no-std-net = "0.6.0"
+nostd = "0.1.6"
 sha2 = "0.11.0"
 spinning_top = "0.3.0"
 talc = "5.0.3"
@@ -24,3 +26,11 @@ overflow-checks = false
 
 [profile.release.build-override]
 opt-level = 3            # build scripts themselves can be fast
+
+[[bin]]
+name = "dnstest"
+path = "src/dnstest.rs"
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
