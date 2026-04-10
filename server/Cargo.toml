@@ -1,16 +1,16 @@
 [package]
 name = "tuxmux"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 dns-server = "0.2.6"
 permit = "0.2.1"
-rsa = { version = "0.9", default-features = false, features = ["std", "pem"] }
 rusqlite = { version = "0.39.0", default-features = false }
 signal-hook = { version = "0.4", default-features = false, features = ["iterator"] }
 tokio = { version = "1.50.0", default-features=false, features = ["rt", "rt-multi-thread", "fs",  "macros"] }
 users = { version = "0.11.0", default-features = false }
+x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets", "getrandom"] }
 
 [profile.dev]
 debug = false

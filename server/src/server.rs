@@ -1,25 +1,12 @@
 use dns_server::DnsRecord;
 use permit::Permit;
-use rsa::{
-    RsaPrivateKey, RsaPublicKey, pkcs8::DecodePrivateKey, pkcs8::DecodePublicKey,
-    pkcs8::EncodePrivateKey, pkcs8::EncodePublicKey,
-};
+use x25519_dalek::{StaticSecret, SharedSecret, PublicKey};
 use rusqlite::Connection;
 use signal_hook::consts::signal::{SIGINT, SIGTERM};
 use signal_hook::iterator::Signals;
-use std::fs::Permissions;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tokio::fs;
 use users::get_current_uid;
-
-/// RSA private key
-fn generate_keypair(keysize: usize) -> (RsaPrivateKey, RsaPublicKey) {
-    let mut rng = rsa::rand_core::OsRng;
-    let keypair = RsaPrivateKey::new(&mut rng, keysize).unwrap();
-    let public_key = keypair.to_public_key();
-    (keypair, public_key)
-}
 
 /// Config file
 const DATA: &str = "/etc/tuxmux";
@@ -28,6 +15,29 @@ const SPLASH: &str = r"/_  __/_  ___  __/  |/  /_  ___  __
   / / / / / / |/_/ /|_/ / / / / |/_/
  / / / /_/ />  </ /  / / /_/ />  <  
 /_/  \__,_/_/|_/_/  /_/\__,_/_/|_|";
+
+struct Keypair {
+    private: StaticSecret,
+    public: PublicKey,
+}
+
+impl Keypair {
+    fn generate() -> Self {
+        let private = StaticSecret::random();
+        let public = PublicKey::from(&private);
+        Self {
+            private,
+            public,
+        }
+    }
+}
+
+// fn generate_keypair() -> (StaticSecret, PublicKey) {
+//     let mut csprng = CryptoRng;
+//     let secret = StaticSecret::new(&mut csprng);
+//     let public = PublicKey::from(&secret);
+//     (secret, public)
+// }
 
 #[tokio::main]
 async fn main() {
@@ -65,35 +75,21 @@ async fn main() {
 
     // This is the master keypair
     // encrypts everything that the operator can access after a challenge
-    let (private_key, public_key): (RsaPrivateKey, RsaPublicKey) =
-        if !fs::try_exists(data.join("private.der")).await.unwrap() {
-            let (private_key, public_key) = generate_keypair(2048);
-            let private_key_file = private_key.to_pkcs8_der().unwrap();
-            let public_key_file = public_key.to_public_key_der().unwrap();
-
-            fs::write(
-                data.join("private.der"),
-                private_key_file.as_bytes().as_ref(),
-            )
+    let keypair = if fs::try_exists(data.join("private.key")).await.unwrap() {
+        let bytes: [u8; 32] = fs::read(data.join("private.key"))
             .await
+            .unwrap()
+            .try_into()
             .unwrap();
-            fs::write(data.join("public.der"), public_key_file.as_ref())
-                .await
-                .unwrap();
-            fs::set_permissions(data.join("public.der"), Permissions::from_mode(0o600))
-                .await
-                .unwrap();
-            fs::set_permissions(data.join("private.der"), Permissions::from_mode(0o600))
-                .await
-                .unwrap();
-            (private_key, public_key)
-        } else {
-            let private_key = RsaPrivateKey::read_pkcs8_der_file(data.join("private.der")).unwrap();
-            let public_key =
-                RsaPublicKey::read_public_key_der_file(data.join("public.der")).unwrap();
-            (private_key, public_key)
-        };
-
+        let private = StaticSecret::from(bytes);
+        let public = PublicKey::from(&private);
+        Keypair { private, public }
+    } else {
+        let keypair = Keypair::generate();
+        fs::write(data.join("private.key"), &keypair.private.to_bytes()).await.unwrap();
+        fs::write(data.join("public.key"), &keypair.public.to_bytes()).await.unwrap();
+        keypair
+    };
     let records = vec![
         DnsRecord::new_txt("example.com", "Hello, world!").unwrap(),
         DnsRecord::new_aaaa("example.com", "::1").unwrap(),
