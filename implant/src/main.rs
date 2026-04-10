@@ -7,7 +7,7 @@ mod debug;
 #[cfg(debug_assertions)]
 pub use debug::print;
 
-use talc::{*, source::Claim};
+// use talc::{*, source::Claim};
 
 struct Lcg {
     seed: u32,
@@ -25,12 +25,12 @@ impl Lcg {
     }
 }
     
-#[global_allocator]
-static TALC: TalcLock<spinning_top::RawSpinlock, Claim> = TalcLock::new(unsafe {
-    static mut INITIAL_HEAP: [u8; min_first_heap_size::<DefaultBinning>() + 2000] =
-        [0; min_first_heap_size::<DefaultBinning>() + 2000];
-    Claim::array(&raw mut INITIAL_HEAP)
-});
+// #[global_allocator]
+// static TALC: TalcLock<spinning_top::RawSpinlock, Claim> = TalcLock::new(unsafe {
+//     static mut INITIAL_HEAP: [u8; min_first_heap_size::<DefaultBinning>() + 2000] =
+//         [0; min_first_heap_size::<DefaultBinning>() + 2000];
+//     Claim::array(&raw mut INITIAL_HEAP)
+// });
 
 #[unsafe(no_mangle)]
 extern "C" fn main() -> i32 {

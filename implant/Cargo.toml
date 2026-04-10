@@ -6,8 +6,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-spinning_top = "0.3.0"
-talc = "5.0.3"
+# spinning_top = "0.3.0"
+# talc = "5.0.3"
 
 [profile.dev]
 panic = "immediate-abort"
