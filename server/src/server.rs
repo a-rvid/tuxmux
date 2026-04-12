@@ -11,7 +11,7 @@ use users::get_current_uid;
 /// Config file
 const DATA: &str = "/etc/tuxmux";
 
-const SPLASH: &str = r"/_  __/_  ___  __/  |/  /_  ___  __
+const SPLASH: &str = r" /_  __/_  ___  __/  |/  /_  ___  __
   / / / / / / |/_/ /|_/ / / / / |/_/
  / / / /_/ />  </ /  / / /_/ />  <  
 /_/  \__,_/_/|_/_/  /_/\__,_/_/|_|";
