@@ -5,12 +5,14 @@ edition = "2021"
 
 [dependencies]
 hickory-proto = { version = "0.25", default-features = false }
-tokio = { version = "1.50.0", default-features = false, features = ["rt", "rt-multi-thread", "fs",  "macros", "sync", "net", "time"] }
+tokio = { version = "1.50.0", default-features = false, features = ["rt", "io-util", "rt-multi-thread", "fs",  "macros", "sync", "net", "time"] }
 permit = "0.2.1"
 rusqlite = { version = "0.39.0", default-features = false }
 signal-hook = { version = "0.4", default-features = false, features = ["iterator"] }
 users = { version = "0.11.0", default-features = false }
 x25519-dalek = { version = "2.0.1", default-features = false, features = ["static_secrets", "getrandom"] }
+toml = "1.1.2"
+serde = { version = "1.0", features = ["derive"] }
 
 [profile.dev]
 debug = false
