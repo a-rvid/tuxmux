@@ -60,21 +60,25 @@ extern "C" fn main() -> ! {
 
     let mut seed: u32 = 0;
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::x86_64::_rdrand32_step(&mut seed) };
+    unsafe {
+        core::arch::x86_64::_rdrand32_step(&mut seed)
+    };
 
     #[cfg(debug_assertions)]
     {
         let random = lcg.next_u16();
         println!("Random number: {}", random);
     }
-    loop {
-        
-    }
+    loop {}
     #[cfg(debug_assertions)]
-    { unreachable!("You've somehow reached the end of the program.") }
+    {
+        unreachable!("You've somehow reached the end of the program.")
+    }
 
     #[cfg(not(debug_assertions))]
-    { unreachable!() }
+    {
+        unreachable!()
+    }
 }
 
 const fn parse_u8(s: &str) -> u8 {
