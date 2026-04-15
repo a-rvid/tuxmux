@@ -16,7 +16,7 @@ jobs:
           toolchain: nightly
           components: rustfmt
       - name: cargo fmt
-        run: cargo fmt
+        run: cd implant && cargo fmt && cd ../server && cargo fmt
       - name: Commit changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

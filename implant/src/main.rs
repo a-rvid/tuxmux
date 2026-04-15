@@ -7,6 +7,14 @@ mod debug;
 #[cfg(debug_assertions)]
 pub use debug::print;
 
+use core::panic::PanicInfo;
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    #[cfg(debug_assertions)]
+    println!("A panic occured: {}", info);
+    main()
+}
+
 // use talc::{*, source::Claim};
 
 struct Lcg {
@@ -40,7 +48,7 @@ impl Lcg {
 // });
 
 #[unsafe(no_mangle)]
-extern "C" fn main() -> i32 {
+extern "C" fn main() -> ! {
     #[cfg(debug_assertions)]
     {
         println!("TuxMux implant debug; DO NOT USE IN PRODUCTION");
@@ -51,15 +59,22 @@ extern "C" fn main() -> i32 {
     }
 
     let mut seed: u32 = 0;
+    #[cfg(target_arch = "x86_64")]
     unsafe { core::arch::x86_64::_rdrand32_step(&mut seed) };
-    let mut lcg = Lcg::new(seed, 1664525, 1013904223); // https://en.wikipedia.org/wiki/Linear_congruential_generator
 
     #[cfg(debug_assertions)]
     {
         let random = lcg.next_u16();
         println!("Random number: {}", random);
     }
-    0
+    loop {
+        
+    }
+    #[cfg(debug_assertions)]
+    { unreachable!("You've somehow reached the end of the program.") }
+
+    #[cfg(not(debug_assertions))]
+    { unreachable!() }
 }
 
 const fn parse_u8(s: &str) -> u8 {
