@@ -9,7 +9,7 @@ pub use debug::print;
 
 use core::panic::PanicInfo;
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
     #[cfg(debug_assertions)]
     println!("A panic occured: {}", info);
     main()
@@ -62,9 +62,11 @@ extern "C" fn main() -> ! {
     #[cfg(target_arch = "x86_64")]
     unsafe { core::arch::x86_64::_rdrand32_step(&mut seed) };
 
+    let mut rng = Lcg::new(seed, 1664525, 1013904223);
+
     #[cfg(debug_assertions)]
     {
-        let random = lcg.next_u16();
+        let random = rng.next_u16();
         println!("Random number: {}", random);
     }
     loop {
