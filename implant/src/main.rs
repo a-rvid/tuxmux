@@ -72,15 +72,7 @@ extern "C" fn main() -> ! {
         println!("Random number: {}", random);
     }
     loop {}
-    #[cfg(debug_assertions)]
-    {
-        unreachable!("You've somehow reached the end of the program.")
-    }
-
-    #[cfg(not(debug_assertions))]
-    {
-        unreachable!()
-    }
+    // unreachable!();
 }
 
 const fn parse_u8(s: &str) -> u8 {
