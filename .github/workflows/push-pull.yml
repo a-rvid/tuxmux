@@ -11,10 +11,10 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
+          toolchain: nightly
           components: rustfmt
       - name: cargo fmt
-        run: cd server && cargo fmt && cd ../implant && cargo fmt
+        run: cargo fmt
       - name: Commit changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
