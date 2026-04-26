@@ -24,7 +24,7 @@ impl fmt::Write for Writer {
 
 pub fn print(args: fmt::Arguments) {
     use fmt::Write;
-    Writer{}.write_fmt(args).unwrap();
+    Writer {}.write_fmt(args).unwrap();
 }
 
 #[macro_export]

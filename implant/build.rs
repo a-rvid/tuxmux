@@ -1,12 +1,13 @@
 fn main() {
-    let domain = std::env::var("C2_DOMAIN")
-        .expect("C2_DOMAIN env var required");
+    let domain = std::env::var("C2_DOMAIN").expect("C2_DOMAIN env var required");
 
-    let ip = std::env::var("DNS_SERVER")
-        .expect("DNS_SERVER env var required");
+    let ip = std::env::var("DNS_SERVER").expect("DNS_SERVER env var required");
 
     let octets: Vec<u8> = ip.split('.').map(|s| s.parse().unwrap()).collect();
-    assert!(octets.len() == 4, "DNS_SERVER must be an IPv4 address with 4 octets");
+    assert!(
+        octets.len() == 4,
+        "DNS_SERVER must be an IPv4 address with 4 octets"
+    );
 
     println!("cargo:rustc-env=C2_DOMAIN={}", domain);
     println!("cargo:rustc-env=DNS_1={}", octets[0]);
