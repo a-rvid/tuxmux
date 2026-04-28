@@ -1,5 +1,7 @@
 use rusqlite::Connection;
 use serde::Deserialize;
+use std::process::exit;
+use std::io;
 use std::os::unix::prelude::PermissionsExt;
 use std::path::Path;
 use tokio::fs::{self, OpenOptions};
@@ -17,9 +19,11 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
+use log::{debug, error, log_enabled, info, Level};
+use simple_logger;
 
 /// Config file
-const DATA: &str = "/etc/tuxmux";
+const DATA: &str = "/etc/tuxcommand";
 
 /// Codes
 const EXIT: u8 = 0x01;
@@ -32,16 +36,19 @@ const SPLASH: &str = r" /_  __/_  ___  __/  |/  /_  ___  __
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let data = if let Ok(config) = std::env::var("TUXMUX_CONFIG") {
+    simple_logger::init_with_level(log::Level::Info).unwrap();
+    println!("{}", SPLASH); 
+    
+    let data = if let Ok(config) = std::env::var("TUXCMD_CONFIG") {
         config
     } else if get_current_uid() == 0 {
         DATA.to_string()
     } else {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
-        format!("{home}/.tuxmux")
+        format!("{home}/.tuxcommand")
     };
 
-    let port: u16 = std::env::var("TUXMUX_PORT")
+    let port: u16 = std::env::var("TUXCMD_PORT")
         .unwrap_or_else(|_| "53".to_string())
         .parse()
         .unwrap();
@@ -56,13 +63,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conn = Arc::new(Mutex::new(init_db(data).await.unwrap()));
     let config: Config = load_config(data).await.unwrap();
 
-    println!("{}", SPLASH); // TUXMUX splash
-    println!("Config directory: {}", data.display());
+    info!("Config directory: {}", data.display());
+    info!("C2 domains: {:?}", config.domains);
+    let socket: UdpSocket = match UdpSocket::bind(SocketAddr::from_str(format!("0.0.0.0:{}", port).as_str())?).await {
+        Ok(socket) => {
+            info!("Listening on 0.0.0.0:{}", port);
+            socket
+        }
+        Err(e) => {
+            match e.kind() {
+                io::ErrorKind::AddrInUse => {
+                    error!("Address 0.0.0.0:{} is already in use. Is another instance of TuxCommand or a DNS server running?", port);
+                    exit(1)
+                }
+                io::ErrorKind::PermissionDenied => {
+                    error!("Failed to bind on 0.0.0.0:{}. Do you have CAP_NET_BIND_SERVICE? (TIP: are you running as root?)", port);
+                    exit(1)
+                }
+                _ => {
+                    error!("An unexpected error occurred while binding to 0.0.0.0:{}", port);
+                    error!("{}", e);
+                    exit(1)
+                }
+            }
+        }
+    };
 
-    let socket =
-        UdpSocket::bind(SocketAddr::from_str(format!("0.0.0.0:{}", port).as_str())?).await?;
-    println!("Listening on 0.0.0.0:{}", port);
-    println!("C2 domains: {:?}", config.domains);
+    // let socket =
+    //     UdpSocket::bind(SocketAddr::from_str(format!("0.0.0.0:{}", port).as_str())?).await?;
     let cache = Arc::new(Mutex::new(
         load_from_db(conn.clone(), config.domains.clone()).await?,
     ));
@@ -82,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut buf = vec![0u8; 4096];
     loop {
         let (len, peer) = socket.recv_from(&mut buf).await?;
-        println!("Received request from {}", peer);
+        info!("Received request from {}", peer);
         let records = load_from_db(conn_clone.clone(), config.domains.clone())
             .await
             .unwrap_or_default();
@@ -127,7 +155,7 @@ fn build_response(
                     ));
                 }
                 _ => {
-                    println!("not implemented type");
+                    error!("Someone sent a query with unimplemented type.");
                 }
             }
         }
