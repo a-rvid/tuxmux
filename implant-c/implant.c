@@ -1,3 +1,6 @@
+typedef __builtin_va_list __gnuc_va_list;
+#define _FORTIFY_SOURCE 0
+#define __USE_FORTIFY_LEVEL 0
 #include <stdio.h>
 #include "dns.h"
 #include <signal.h>
@@ -39,7 +42,7 @@ int main(int argc, char **argv) {
     unsigned char query[1024 + 33 + 257];
     sprintf((char *)query, "testing.%s", C2_DOMAIN);
 
-    unsigned char *txt_results = query_txt(query);
+    unsigned char **txt_results = query_txt(query);
 
     if(txt_results) {
         printf("TXT records for %s:\n\n", hostname);
