@@ -14,7 +14,7 @@ x25519-dalek = { version = "2.0.1", default-features = false, features = ["stati
 toml = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4.29"
-simple_logger = "5.2.0"
+simple_logger = { version = "5.2.0", default-features = false, features = ["stderr", "colored", "colors", "time", "threads"] }
 
 [profile.dev]
 debug = false
