@@ -12,7 +12,9 @@ If you run the implant binary, it will instantly change the process name to
 It will then query the C2 domain for TXT records, and if it finds a record with the name of the hostname, it will execute the command in the TXT record. Later on it will have different functions that the C2 server can use to control the victim with beaconing, etc.
 
 ## Configuration
-There is a config file located at /etc/tuxcommand/config.toml (or $HOME/.tuxcommand/config.toml), which is used to configure stuff such as the port, and C2 domain.
+There is a config file located at /etc/tuxcommand/config.toml (or $HOME/.tuxcommand/config.toml), which is used to configure stuff such as the port, and C2 domain. If you wanna test with a different port (this can be for various reasons, eg. proxying), you can
+1. Set the environment variable TUXCMD_PORT to the port you want to use (overrides the config file)
+2. Set port entry in the config file
 At the moment it's working as a authorative DNS server with one test a record:
 
 ```
